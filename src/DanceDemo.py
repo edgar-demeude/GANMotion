@@ -18,20 +18,20 @@ class DanceDemo:
         The animation/posture from self.source is applied to character define self.target using self.gen
     """
     def __init__(self, filename_src, typeOfGen=2):
-        self.target = VideoSkeleton( "data/taichi1.mp4" )
+        self.target = VideoSkeleton( "../data/taichi1.mp4" )
         self.source = VideoReader(filename_src)
         if typeOfGen==1:           # Nearest
             print("Generator: GenNeirest")
             self.generator = GenNeirest(self.target)
-        # elif typeOfGen==2:         # VanillaNN
-        #     print("Generator: GenSimpleNN")
-        #     self.generator = GenVanillaNN( self.target, loadFromFile=True, optSkeOrImage=1)
-        # elif typeOfGen==3:         # VanillaNN
-        #     print("Generator: GenSimpleNN")
-        #     self.generator = GenVanillaNN( self.target, loadFromFile=True, optSkeOrImage=2)
-        # elif typeOfGen==4:         # GAN
-        #     print("Generator: GenSimpleNN")
-        #     self.generator = GenGAN( self.target, loadFromFile=True)
+        elif typeOfGen==2:         # VanillaNN
+            print("Generator: GenSimpleNN")
+            self.generator = GenVanillaNN( self.target, loadFromFile=True, optSkeOrImage=1)
+        elif typeOfGen==3:         # VanillaNN
+            print("Generator: GenSimpleNN")
+            self.generator = GenVanillaNN( self.target, loadFromFile=True, optSkeOrImage=2)
+        elif typeOfGen==4:         # GAN
+            print("Generator: GenSimpleNN")
+            self.generator = GenGAN( self.target, loadFromFile=True)
         else:
             print("DanceDemo: typeOfGen error!!!")
 
@@ -68,8 +68,8 @@ if __name__ == '__main__':
     # VANILLA_NN_SKE = 2
     # VANILLA_NN_Image = 3
     # GAN = 4
-    GEN_TYPE = 1
-    #ddemo = DanceDemo("data/taichi2_full.mp4", GEN_TYPE)
-    ddemo = DanceDemo("data/taichi2.mp4", GEN_TYPE)
-    #ddemo = DanceDemo("data/karate1.mp4", GEN_TYPE)
+    GEN_TYPE = 4
+    # ddemo = DanceDemo("../data/taichi2_full.mp4", GEN_TYPE)
+    ddemo = DanceDemo("../data/taichi2.mp4", GEN_TYPE)
+    # ddemo = DanceDemo("../data/karate1.mp4", GEN_TYPE)
     ddemo.draw()

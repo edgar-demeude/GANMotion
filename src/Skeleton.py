@@ -266,7 +266,7 @@ class Skeleton:
 if __name__ == '__main__':
     s = Skeleton()
     print("Current Working Directory:", os.getcwd())
-    image = cv2.imread("data/test.jpg")
+    image = cv2.imread("../data/test.jpg")
     if image is None:
         print('Lecture de l\'image a échoué.')
     #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

@@ -68,7 +68,7 @@ class VideoReader:
 
 if __name__ == '__main__':
     print("Current Working Directory:", os.getcwd())
-    video = VideoReader("data/taichi1.mp4")
+    video = VideoReader("../data/taichi1.mp4")
     for i in range(video.getTotalFrames()):
         image = video.readFrame()
         cv2.imshow('Image', image)
