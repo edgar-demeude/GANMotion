@@ -48,7 +48,7 @@ class DanceDemo:
                     ske.draw(image_src)
                     image_tgt = self.generator.generate(ske)            # GENERATOR !!!
                     # image_tgt = image_tgt*255
-                    image_tgt = cv2.resize(image_tgt, (128, 128))
+                    image_tgt = cv2.resize(image_tgt, (256, 256))
                 else:
                     image_tgt = image_err
                 image_combined = combineTwoImages(image_src, image_tgt)
@@ -69,7 +69,6 @@ if __name__ == '__main__':
     # VANILLA_NN_Image = 3
     # GAN = 4
     GEN_TYPE = 4
-    # ddemo = DanceDemo("../data/taichi2_full.mp4", GEN_TYPE)
-    ddemo = DanceDemo("../data/karate_full.mp4", GEN_TYPE)
-    # ddemo = DanceDemo("../data/karate1.mp4", GEN_TYPE)
+    ddemo = DanceDemo("../data/taichi2.mp4", GEN_TYPE)
+    # ddemo = DanceDemo("../data/tricking.mp4", GEN_TYPE)
     ddemo.draw()

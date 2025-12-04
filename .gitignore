@@ -3,3 +3,4 @@ data/Dance/*
 *_pycache_*
 src/__pycache_*
 *.pkl
+src/runs

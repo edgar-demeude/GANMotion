@@ -99,6 +99,55 @@ class VideoSkeletonDataset(Dataset):
         return denormalized_output_bgr
 
 
+class SelfAttention(nn.Module):
+    """Implémentation du Non-local Block pour l'auto-attention."""
+    def __init__(self, in_channels):
+        super(SelfAttention, self).__init__()
+        self.in_channels = in_channels
+        
+        # Réduction de dimension pour Q et K pour l'efficacité (C/8)
+        self.f = nn.Conv2d(in_channels, in_channels // 8, 1) # Query
+        self.g = nn.Conv2d(in_channels, in_channels // 8, 1) # Key
+        
+        # Value (pas de réduction)
+        self.h = nn.Conv2d(in_channels, in_channels, 1) # Value
+        
+        # Paramètre d'échelle (initialisé à zéro, pour commencer comme une fonction identité)
+        self.gamma = nn.Parameter(torch.zeros(1)) 
+        
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        batch_size, C, H, W = x.size()
+        N = H * W # Nombre total de positions (pixels)
+        
+        # 1. Calcul de Query, Key, Value
+        # Query: (B, N, C/8)
+        proj_query = self.f(x).view(batch_size, -1, N).permute(0, 2, 1) 
+        # Key: (B, C/8, N)
+        proj_key = self.g(x).view(batch_size, -1, N) 
+        # Value: (B, C, N)
+        proj_value = self.h(x).view(batch_size, -1, N) 
+
+        # 2. Carte d'Attention (Energy): S = Q * K_T
+        # energy: (B, N, N)
+        energy = torch.bmm(proj_query, proj_key) 
+        
+        # 3. Normalisation (Softmax)
+        attention = self.softmax(energy) # Matrice des poids d'attention
+
+        # 4. Contexte Pondéré: O = V * Attention_T
+        # out: (B, C, N)
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1)) # Transpose attention pour le bmm
+        
+        # 5. Reshape et combinaison avec l'entrée
+        out = out.view(batch_size, C, H, W)
+        
+        # Output avec connexion résiduelle: y = gamma * out + x
+        out = self.gamma * out + x
+        return out
+
+
 # --- Model Weights Initialization ---
 
 def init_weights(m):
@@ -148,11 +197,11 @@ class GenNNSke26ToImage(nn.Module):
         
         return img
 
-
+# --- Generator Architecture Modifiée ---
 class GenNNSkeImToImage(nn.Module):
     """
-    U-Net Generator for Image-to-Image Translation (Skeleton Image -> Real Image).
-    Uses skip connections for better detail preservation.
+    U-Net Generator pour la traduction Image-to-Image (Skeleton Image -> Real Image)
+    avec Self-Attention dans le Bottleneck.
     """
     def __init__(self):
         super().__init__()
@@ -160,30 +209,26 @@ class GenNNSkeImToImage(nn.Module):
         ngf = 64 # Base number of filters
         
         # === ENCODER (Downsampling) ===
-        # C1 (3 input -> ngf, 64x64 -> 32x32)
-        self.enc1 = nn.Sequential(
-            nn.Conv2d(self.input_channels, ngf, 4, 2, 1, bias=False), 
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        # C2 (32x32 -> 16x16)
+        # C1, C2, C3 restent inchangés
+        self.enc1 = nn.Sequential(nn.Conv2d(self.input_channels, ngf, 4, 2, 1, bias=False), nn.LeakyReLU(0.2, inplace=True))
         self.enc2 = self._make_down_block(ngf, ngf * 2) 
-        # C3 (16x16 -> 8x8)
         self.enc3 = self._make_down_block(ngf * 2, ngf * 4) 
+        
         # C4 (8x8 -> 4x4) (Latent Space)
         self.enc4 = self._make_down_block(ngf * 4, ngf * 8) 
+        
+        # === NOUVEAU: MODULE D'ATTENTION ===
+        self.attention = SelfAttention(ngf * 8) # Appliqué sur le feature map 4x4x512
 
         # === DECODER (Upsampling) ===
-        # D1 (4x4 -> 8x8). Input: (ngf*8 + ngf*8) from e4 and its skip
+        # D1 (4x4 -> 8x8). L'entrée est doublée comme dans votre architecture originale.
         self.dec1 = self._make_up_block(ngf * 8 + ngf * 8, ngf * 4)
-        # D2 (8x8 -> 16x16). Input: (ngf*4 + ngf*4) from d1 and e3 skip
+        # D2, D3, D4 restent inchangés (gestion des Skip Connections)
         self.dec2 = self._make_up_block(ngf * 4 + ngf * 4, ngf * 2)
-        # D3 (16x16 -> 32x32). Input: (ngf*2 + ngf*2) from d2 and e2 skip
         self.dec3 = self._make_up_block(ngf * 2 + ngf * 2, ngf)
-        
-        # D4 (32x32 -> 64x64). Input: (ngf + ngf) from d3 and e1 skip
         self.dec4 = nn.Sequential(
             nn.ConvTranspose2d(ngf + ngf, 3, 4, 2, 1, bias=False),
-            nn.Tanh() # Final output in [-1, 1]
+            nn.Tanh()
         )
         
         self.apply(init_weights)
@@ -205,26 +250,28 @@ class GenNNSkeImToImage(nn.Module):
         )
 
     def forward(self, x):
-        # === Encoder (Store outputs for Skip Connections) ===
+        # === Encoder ===
         e1 = self.enc1(x) 
         e2 = self.enc2(e1)
         e3 = self.enc3(e2)
-        e4 = self.enc4(e3) # Latent Space
+        e4_conv = self.enc4(e3) # Output de la convolution (4x4x512)
+        
+        # === Application de l'Attention ===
+        e4_attn = self.attention(e4_conv) 
 
-        # === Decoder with Skip Connections ===
-        # D1: Concatenate e4 and e4 (no true skip, just for symmetry)
-        d1 = self.dec1(torch.cat([e4, e4], 1)) 
+        # === Decoder avec Skip Connections ===
+        # D1: Utilise l'output attentif (e4_attn)
+        # On concatène e4_attn avec lui-même pour l'entrée de d1 (selon votre design original)
+        d1 = self.dec1(torch.cat([e4_attn, e4_attn], 1)) 
         
-        # D2: Concatenate d1 and e3 skip connection
+        # D2, D3, D4 (Unchanged Skip Connections)
         d2 = self.dec2(torch.cat([d1, e3], 1)) 
-        
-        # D3: Concatenate d2 and e2 skip connection
         d3 = self.dec3(torch.cat([d2, e2], 1)) 
-        
-        # D4: Concatenate d3 and e1 skip connection (Final output layer)
         img = self.dec4(torch.cat([d3, e1], 1))
         
         return img
+
+
 
 
 # --- Main GAN Class ---
@@ -357,9 +404,9 @@ class GenVanillaNN():
 if __name__ == '__main__':
     force = False
     optSkeOrImage = 2 # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
-    n_epoch = 10000
-    # train = True
-    train = False
+    n_epoch = 100
+    train = True
+    # train = False
 
     if len(sys.argv) > 1:
         filename = sys.argv[1]

@@ -53,7 +53,7 @@ class Discriminator(nn.Module):
             nn.Conv2d(ngf * 8, 1, 4, 1, 0, bias=False), 
         )
         
-        # self.apply(init_weights) 
+        self.apply(init_weights) 
 
     def forward(self, input):
         return self.model(input)
@@ -81,7 +81,7 @@ class GenGAN():
         self.optimizerG = torch.optim.Adam(self.netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
         
         # CRITÈRES DE PERTE
-        self.criterionGAN = nn.BCEWithLogitsLoss() 
+        # self.criterionGAN = nn.BCEWithLogitsLoss() 
         self.criterionL1 = nn.L1Loss()
         self.lambda_L1 = 50 # Réduction de 100 à 50 pour potentiellement améliorer la couleur
         self.lambda_gp = 10
@@ -170,40 +170,60 @@ class GenGAN():
         lambda_gp = self.lambda_gp
         lambda_l1 = self.lambda_L1
         
-        # Utiliser un nom de répertoire basé sur le nom du fichier checkpoint pour SummaryWriter
         writer_dir_name = self.filename_G_checkpoint.split('/')[-1].split('.')[0]
         writer = SummaryWriter(f'runs/GenGAN_{writer_dir_name}')
 
         print(f"Starting Training from epoch {self.start_epoch} to {n_epochs} with WGAN-GP...")
         
-        # Utiliser self.start_epoch
         for epoch in range(self.start_epoch, n_epochs):
             for i, (ske_img, real_image) in enumerate(self.dataloader):
                 ske_img = ske_img.to(self.device)
                 real_image = real_image.to(self.device)
-                
                 ske_img_cond = ske_img
+                
+                # ====================
+                # Train Discriminator
+                # ====================
                 self.netD.zero_grad()
+                
+                # 1. Real
                 real_pair = torch.cat((ske_img_cond, real_image), 1)
-                output_real = self.netD(real_pair).mean()
+                output_real = self.netD(real_pair).mean() # Pas de logit/sigmoid pour WGAN
+
+                # 2. Fake
                 fake_image = self.netG(ske_img)
+                # Detach pour éviter la rétropropagation dans G lors du D update
                 fake_pair = torch.cat((ske_img_cond, fake_image.detach()), 1)
-                output_fake = self.netD(fake_pair).mean()
-                errD_Wasserstein = output_fake - output_real
+                output_fake = self.netD(fake_pair).mean() 
+
+                # 3. WGAN-GP Loss
+                errD_Wasserstein = output_fake - output_real # Approximation de la distance de Wasserstein
                 gradient_penalty = self.compute_gradient_penalty(real_image.data, fake_image.data, ske_img_cond.data)
+                
                 errD = errD_Wasserstein + lambda_gp * gradient_penalty
+                
                 errD.backward()
                 self.optimizerD.step()
 
+                # ====================
+                # Train Generator
+                # ====================
                 self.netG.zero_grad()
+                
+                # 1. Adversarial Loss (maximize D(G(z, c))) -> minimize -D(G(z, c))
+                # On utilise la nouvelle fake_image générée SANS detach
                 output_G = self.netD(torch.cat((ske_img_cond, fake_image), 1)).mean()
-                errG_GAN = -output_G
+                errG_GAN = -output_G # Perte de Wasserstein pour G
+                
+                # 2. L1 Loss (Pixel-wise consistency)
                 errG_L1 = self.criterionL1(fake_image, real_image) * lambda_l1
+                
                 errG = errG_GAN + errG_L1
+                
                 errG.backward()
                 self.optimizerG.step()
                 
-                # Logging
+                # Logging (inchangé)
                 if i % 10 == 0:
                     print(f'[{epoch+1}/{n_epochs}][{i}/{len(self.dataloader)}] Loss_D: {errD.item():.4f} | W_Loss: {errD_Wasserstein.item():.4f} | Loss_G: {errG.item():.4f} (GAN: {errG_GAN.item():.4f} L1: {errG_L1.item():.4f})')
 
@@ -212,17 +232,17 @@ class GenGAN():
                     writer.add_scalars('Loss_D', {'W_Loss': errD_Wasserstein.item(), 'Total_D': errD.item()}, global_step)
                     writer.add_scalars('Loss_G', {'GAN': errG_GAN.item(), 'L1': errG_L1.item(), 'Total_G': errG.item()}, global_step)
 
-            # SAUVEGARDE PÉRIODIQUE DU CHECKPOINT
+            # SAUVEGARDE PÉRIODIQUE DU CHECKPOINT (Logique correcte)
             if (epoch + 1) % 100 == 0 or (epoch + 1) == n_epochs:
                 
-                # Sauvegarde du Checkpoint (Générateur)
+                # Sauvegarde G
                 torch.save({
                     'epoch': epoch + 1,
                     'model_state_dict': self.netG.state_dict(),
                     'optimizer_state_dict': self.optimizerG.state_dict(),
                 }, self.filename_G_checkpoint)
 
-                # Sauvegarde du Checkpoint (Discriminateur)
+                # Sauvegarde D
                 torch.save({
                     'model_state_dict': self.netD.state_dict(),
                     'optimizer_state_dict': self.optimizerD.state_dict(),
@@ -270,15 +290,15 @@ if __name__ == '__main__':
     # Si False: Chargement du dernier modèle entraîné (pour inférence)
     # ===================================================
     
-    # TRAIN_MODE = True 
-    TRAIN_MODE = False 
+    TRAIN_MODE = True 
+    # TRAIN_MODE = False 
 
     if TRAIN_MODE:
         # Tente de charger un checkpoint si loadFromFile=True
         gen = GenGAN(targetVideoSke, loadFromFile=True) 
         # Si un checkpoint est chargé, il repartira de self.start_epoch
         # sinon il repartira de 0.
-        gen.train(n_epochs=10000)
+        gen.train(n_epochs=1000)
     else:
         # Pour l'inférence, charge le dernier checkpoint trouvé 
         # et le met en mode évaluation (génération seulement)
