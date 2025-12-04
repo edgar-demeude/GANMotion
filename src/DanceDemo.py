@@ -68,7 +68,7 @@ if __name__ == '__main__':
     # VANILLA_NN_SKE = 2
     # VANILLA_NN_Image = 3
     # GAN = 4
-    GEN_TYPE = 4
+    GEN_TYPE = 1
     ddemo = DanceDemo("../data/taichi2.mp4", GEN_TYPE)
     # ddemo = DanceDemo("../data/tricking.mp4", GEN_TYPE)
     ddemo.draw()

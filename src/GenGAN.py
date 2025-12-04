@@ -290,8 +290,8 @@ if __name__ == '__main__':
     # Si False: Chargement du dernier modèle entraîné (pour inférence)
     # ===================================================
     
-    TRAIN_MODE = True 
-    # TRAIN_MODE = False 
+    # TRAIN_MODE = True 
+    TRAIN_MODE = False 
 
     if TRAIN_MODE:
         # Tente de charger un checkpoint si loadFromFile=True
