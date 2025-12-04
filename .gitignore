@@ -1,4 +1,5 @@
 data/taichi1/*
+data/Dance/*
 *_pycache_*
 src/__pycache_*
 *.pkl

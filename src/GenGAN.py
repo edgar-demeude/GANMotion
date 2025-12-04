@@ -15,7 +15,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 
-# Assurez-vous que ces classes sont correctement importées depuis vos modules
 from VideoSkeleton import VideoSkeleton
 from VideoReader import VideoReader
 from Skeleton import Skeleton
@@ -54,7 +53,6 @@ class Discriminator(nn.Module):
             nn.Conv2d(ngf * 8, 1, 4, 1, 0, bias=False), 
         )
         
-        # NOTE: Assurez-vous que la fonction init_weights est définie et disponible
         # self.apply(init_weights) 
 
     def forward(self, input):
@@ -91,12 +89,12 @@ class GenGAN():
         self.real_label = 1.
         self.fake_label = 0.
         
-        # FICHIERS DE CHECKPOINT (MODIFICATION IMPORTANTE)
+        # FICHIERS DE CHECKPOINT
         self.filename_G_checkpoint = '../data/Dance/DanceGenGAN_G_checkpoint.pth'
         self.filename_D_checkpoint = '../data/Dance/DanceGenGAN_D_checkpoint.pth'
         self.start_epoch = 0 # Époque de départ
 
-        # ... (TRANSFORMATIONS ET DATASET)
+        # TRANSFORMATIONS ET DATASET
         image_size = 64
         src_transform = transforms.Compose([
             SkeToImageTransform(image_size),
@@ -116,7 +114,7 @@ class GenGAN():
                                             source_transform=src_transform)
         self.dataloader = torch.utils.data.DataLoader(dataset=self.dataset, batch_size=32, shuffle=True)
         
-        # CHARGEMENT DU CHECKPOINT (MODIFICATION IMPORTANTE)
+        # CHARGEMENT DU CHECKPOINT
         if loadFromFile and os.path.isfile(self.filename_G_checkpoint):
             print(f"GenGAN: Loading checkpoint from {self.filename_G_checkpoint}")
             
@@ -129,7 +127,7 @@ class GenGAN():
                 self.netG.load_state_dict(checkpoint_G['model_state_dict'])
                 self.netD.load_state_dict(checkpoint_D['model_state_dict'])
 
-                # 2. Charger l'état des optimiseurs (Doit être fait APRÈS la création des optimiseurs ci-dessus)
+                # 2. Charger l'état des optimiseurs
                 self.optimizerG.load_state_dict(checkpoint_G['optimizer_state_dict'])
                 self.optimizerD.load_state_dict(checkpoint_D['optimizer_state_dict'])
 
@@ -146,7 +144,6 @@ class GenGAN():
 
 
     def compute_gradient_penalty(self, real_samples, fake_samples, conditional_image):
-        # ... (Méthode inchangée, utilise WGAN-GP)
         device = real_samples.device
         batch_size = real_samples.size(0)
         
@@ -169,7 +166,7 @@ class GenGAN():
         return gradient_penalty
     
 
-    def train(self, n_epochs=5000): # Augmentation du nombre d'époques par défaut pour le GAN
+    def train(self, n_epochs=5000):
         lambda_gp = self.lambda_gp
         lambda_l1 = self.lambda_L1
         
@@ -179,13 +176,12 @@ class GenGAN():
 
         print(f"Starting Training from epoch {self.start_epoch} to {n_epochs} with WGAN-GP...")
         
-        # MODIFICATION IMPORTANTE : Utiliser self.start_epoch
+        # Utiliser self.start_epoch
         for epoch in range(self.start_epoch, n_epochs):
             for i, (ske_img, real_image) in enumerate(self.dataloader):
                 ske_img = ske_img.to(self.device)
                 real_image = real_image.to(self.device)
                 
-                # ... (Reste de la boucle d'entraînement du D inchangé)
                 ske_img_cond = ske_img
                 self.netD.zero_grad()
                 real_pair = torch.cat((ske_img_cond, real_image), 1)
@@ -199,7 +195,6 @@ class GenGAN():
                 errD.backward()
                 self.optimizerD.step()
 
-                # ... (Reste de la boucle d'entraînement du G inchangé)
                 self.netG.zero_grad()
                 output_G = self.netD(torch.cat((ske_img_cond, fake_image), 1)).mean()
                 errG_GAN = -output_G
@@ -217,7 +212,7 @@ class GenGAN():
                     writer.add_scalars('Loss_D', {'W_Loss': errD_Wasserstein.item(), 'Total_D': errD.item()}, global_step)
                     writer.add_scalars('Loss_G', {'GAN': errG_GAN.item(), 'L1': errG_L1.item(), 'Total_G': errG.item()}, global_step)
 
-            # SAUVEGARDE PÉRIODIQUE DU CHECKPOINT (MODIFICATION IMPORTANTE)
+            # SAUVEGARDE PÉRIODIQUE DU CHECKPOINT
             if (epoch + 1) % 100 == 0 or (epoch + 1) == n_epochs:
                 
                 # Sauvegarde du Checkpoint (Générateur)
@@ -238,7 +233,6 @@ class GenGAN():
 
 
     def generate(self, ske):
-        # ... (Méthode inchangée pour la génération)
         self.netG.eval()
         
         with torch.no_grad():
@@ -284,7 +278,7 @@ if __name__ == '__main__':
         gen = GenGAN(targetVideoSke, loadFromFile=True) 
         # Si un checkpoint est chargé, il repartira de self.start_epoch
         # sinon il repartira de 0.
-        gen.train(n_epochs=2000)
+        gen.train(n_epochs=10000)
     else:
         # Pour l'inférence, charge le dernier checkpoint trouvé 
         # et le met en mode évaluation (génération seulement)
