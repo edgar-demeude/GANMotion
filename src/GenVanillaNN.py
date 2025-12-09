@@ -163,74 +163,66 @@ def init_weights(m):
 # --- Generator Architectures ---
 
 class GenNNSke26ToImage(nn.Module):
-    """Simple MLP Generator: Skeleton Vector (26-dim) -> Image (3x64x64)."""
-    def __init__(self):
+    """Simple MLP Generator: Skeleton Vector (26-dim) -> Image (3 x image_size x image_size).
+    Note: Fully-connected generator scales poorly to high resolutions — keep image_size small
+    when using this architecture (recommended: 64 or 128)."""
+    def __init__(self, image_size=64):
         super().__init__()
         self.input_dim = Skeleton.reduced_dim # 26
-        self.output_dim = 3 * 64 * 64 
-        
-        hidden_dim = 1024 
-        
+        self.image_size = image_size
+        self.output_dim = 3 * image_size * image_size 
+
+        # Hidden dimension: keep reasonably large but fixed to avoid explosion with image_size
+        hidden_dim = 1024
+
         self.model = nn.Sequential(
-            # 1. Skeleton Vector -> Latent Space
             nn.Linear(self.input_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # 2. Latent Space -> Flattened Image
             nn.Linear(hidden_dim, self.output_dim),
         )
         self.apply(init_weights)
 
     def forward(self, z):
         # Input: (batch_size, 26, 1, 1) -> Squeeze to (batch_size, 26) for nn.Linear
-        z = z.squeeze(-1).squeeze(-1) 
-        
-        # Pass through linear layers
-        img = self.model(z) 
+        z = z.squeeze(-1).squeeze(-1)
+        img = self.model(z)
 
-        # Reshape output to image format (batch_size, 3, 64, 64)
-        img = img.view(img.size(0), 3, 64, 64)
-        
-        # Apply Tanh to normalize output to [-1, 1]
+        # Reshape output to image format (batch_size, 3, H, W)
+        img = img.view(img.size(0), 3, self.image_size, self.image_size)
         img = torch.tanh(img)
-        
         return img
 
 # --- Generator Architecture Modifiée ---
 class GenNNSkeImToImage(nn.Module):
     """
-    U-Net Generator pour la traduction Image-to-Image (Skeleton Image -> Real Image)
-    avec Self-Attention dans le Bottleneck.
+    U-Net Generator for Image-to-Image translation (Skeleton Image -> Real Image)
+    with an optional Self-Attention block at the bottleneck.
     """
-    def __init__(self):
+    def __init__(self, image_size, base_filters=64):
         super().__init__()
         self.input_channels = 3
-        ngf = 64 # Base number of filters
-        
+        # Use a sensible number of base filters (ngf) independent of image_size.
+        ngf = base_filters
+
         # === ENCODER (Downsampling) ===
-        # C1, C2, C3 restent inchangés
         self.enc1 = nn.Sequential(nn.Conv2d(self.input_channels, ngf, 4, 2, 1, bias=False), nn.LeakyReLU(0.2, inplace=True))
-        self.enc2 = self._make_down_block(ngf, ngf * 2) 
-        self.enc3 = self._make_down_block(ngf * 2, ngf * 4) 
-        
-        # C4 (8x8 -> 4x4) (Latent Space)
-        self.enc4 = self._make_down_block(ngf * 4, ngf * 8) 
-        
-        # === NOUVEAU: MODULE D'ATTENTION ===
-        self.attention = SelfAttention(ngf * 8) # Appliqué sur le feature map 4x4x512
+        self.enc2 = self._make_down_block(ngf, ngf * 2)
+        self.enc3 = self._make_down_block(ngf * 2, ngf * 4)
+        self.enc4 = self._make_down_block(ngf * 4, ngf * 8)
+
+        # === OPTIONAL: Self-Attention at the bottleneck ===
+        self.attention = SelfAttention(ngf * 8)
 
         # === DECODER (Upsampling) ===
-        # D1 (4x4 -> 8x8). L'entrée est doublée comme dans votre architecture originale.
         self.dec1 = self._make_up_block(ngf * 8 + ngf * 8, ngf * 4)
-        # D2, D3, D4 restent inchangés (gestion des Skip Connections)
         self.dec2 = self._make_up_block(ngf * 4 + ngf * 4, ngf * 2)
         self.dec3 = self._make_up_block(ngf * 2 + ngf * 2, ngf)
         self.dec4 = nn.Sequential(
             nn.ConvTranspose2d(ngf + ngf, 3, 4, 2, 1, bias=False),
             nn.Tanh()
         )
-        
+
         self.apply(init_weights)
 
     def _make_down_block(self, in_channels, out_channels):
@@ -287,15 +279,16 @@ class GenVanillaNN():
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         
-        image_size = 64
+        image_size = 512  # Increased from 64 to 1024 (power of 2 for U-Net compatibility)
+        batch_size = 2     # Reduced from 16 due to high resolution memory constraints
         
         # 1. Model and Transform Selection based on input type
         if optSkeOrImage == 1: # skeleton_dim26 to image (MLP)
-            self.netG = GenNNSke26ToImage()
+            self.netG = GenNNSke26ToImage(image_size)
             src_transform = None
             self.filename = '../data/Dance/DanceGenVanillaFromSke26.pth'
         else: # skeleton_image to image (U-Net)
-            self.netG = GenNNSkeImToImage()
+            self.netG = GenNNSkeImToImage(image_size)
             src_transform = transforms.Compose([ 
                 SkeToImageTransform(image_size),
                 transforms.ToTensor(),
@@ -311,20 +304,43 @@ class GenVanillaNN():
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # Normalize to [-1, 1]
         ])
         
-        # 🌟 GPU INTEGRATION 2: Move Model to Device
+        # GPU INTEGRATION 2: Move Model to Device
         self.netG.to(self.device)
             
         # 3. Dataset and DataLoader
         self.dataset = VideoSkeletonDataset(videoSke, ske_reduced=True, target_transform=tgt_transform, source_transform=src_transform)
-        self.dataloader = torch.utils.data.DataLoader(dataset=self.dataset, batch_size=16, shuffle=True)
+        self.dataloader = torch.utils.data.DataLoader(dataset=self.dataset, batch_size=batch_size, shuffle=True, num_workers=0)
         
-        # 4. Model Loading
+        # 4. Model Loading (robust checkpoint handling)
         if loadFromFile and os.path.isfile(self.filename):
             print(f"GenVanillaNN: Loading model from {self.filename}")
-            # Ensure the weights are loaded to the correct device
-            state_dict = torch.load(self.filename, map_location=self.device, weights_only=True)
-            self.netG.load_state_dict(state_dict) 
-            self.netG.eval()
+            try:
+                state = torch.load(self.filename, map_location=self.device)
+                # Handle different checkpoint formats
+                if isinstance(state, dict) and 'state_dict' in state:
+                    state_dict = state['state_dict']
+                else:
+                    state_dict = state
+
+                # Remove 'module.' prefix if present (DataParallel)
+                new_state = {}
+                for k, v in state_dict.items():
+                    if k.startswith('module.'):
+                        new_state[k[len('module.'):]] = v
+                    else:
+                        new_state[k] = v
+
+                # Load with strict=False to allow partial mismatches
+                load_result = self.netG.load_state_dict(new_state, strict=False)
+                self.netG.to(self.device)
+                self.netG.eval()
+                print("Model loaded successfully.")
+                if load_result.missing_keys:
+                    print(f"  Missing keys: {load_result.missing_keys[:3]}...")
+                if load_result.unexpected_keys:
+                    print(f"  Unexpected keys: {load_result.unexpected_keys[:3]}...")
+            except Exception as e:
+                print(f"Warning: failed to load model '{self.filename}': {e}")
 
 
     def train(self, n_epochs=20):
@@ -403,8 +419,8 @@ class GenVanillaNN():
 
 if __name__ == '__main__':
     force = False
-    optSkeOrImage = 1 # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
-    n_epoch = 1000
+    optSkeOrImage = 2 # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
+    n_epoch = 100
     train = True
     # train = False
 
