@@ -286,8 +286,8 @@ if __name__ == '__main__':
 
     targetVideoSke = VideoSkeleton(filename)
 
-    TRAIN_MODE = True
-    # TRAIN_MODE = False
+    # TRAIN_MODE = True
+    TRAIN_MODE = False
 
     if TRAIN_MODE:
         gen = GenGAN(targetVideoSke, loadFromFile=True)
