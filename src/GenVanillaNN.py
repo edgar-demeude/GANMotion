@@ -274,7 +274,7 @@ class GenVanillaNN:
         print(f"Using device: {self.device}")
 
         image_size = 512  # U-Net resolution
-        batch_size = 1    # 1 for high-res stability
+        batch_size = 2    # 2 for high-res stability
 
         # Model + source transform
         if optSkeOrImage == 1:
@@ -333,28 +333,39 @@ class GenVanillaNN:
         if loadFromFile and os.path.isfile(self.filename):
             print(f"GenVanillaNN: Loading model from {self.filename}")
             try:
+                # Accept several checkpoint key conventions
                 state = torch.load(self.filename, map_location=self.device)
 
-                if isinstance(state, dict) and 'state_dict' in state:
-                    state_dict = state['state_dict']
+                # common keys: 'model_state_dict', 'state_dict', or the file may already be a state_dict
+                if isinstance(state, dict):
+                    if 'model_state_dict' in state:
+                        state_dict = state['model_state_dict']
+                    elif 'state_dict' in state:
+                        state_dict = state['state_dict']
+                    else:
+                        # assume dict is a raw state_dict
+                        state_dict = state
                 else:
                     state_dict = state
 
+                # Normalize keys (remove 'module.' prefix from DataParallel if present)
                 new_state = {}
                 for k, v in state_dict.items():
-                    if k.startswith('module.'):
-                        new_state[k[len('module.'):]] = v
-                    else:
-                        new_state[k] = v
+                    new_key = k[len('module.'):] if k.startswith('module.') else k
+                    new_state[new_key] = v
 
+                # Load with strict=False to allow partial mismatch (e.g., BatchNorm -> InstanceNorm change)
                 load_result = self.netG.load_state_dict(new_state, strict=False)
                 self.netG.to(self.device)
                 self.netG.eval()
-                print("Model loaded successfully.")
-                if load_result.missing_keys:
-                    print(f" Missing keys: {load_result.missing_keys[:3]}...")
-                if load_result.unexpected_keys:
-                    print(f" Unexpected keys: {load_result.unexpected_keys[:3]}...")
+                print("Model loaded (partial load allowed).")
+                if getattr(load_result, 'missing_keys', None):
+                    print(f"  Missing keys ({len(load_result.missing_keys)}): {load_result.missing_keys[:10]}")
+                if getattr(load_result, 'unexpected_keys', None):
+                    print(f"  Unexpected keys ({len(load_result.unexpected_keys)}): {load_result.unexpected_keys[:10]}")
+                # Warn about common incompatibility
+                if any(('running_mean' in k or 'running_var' in k) for k in new_state.keys()):
+                    print("Note: checkpoint contains running stats (BatchNorm); if you switched to InstanceNorm weights may not map exactly and colors may change. Consider retraining or using a checkpoint trained with the same normalization.")
             except Exception as e:
                 print(f"Warning: failed to load model '{self.filename}': {e}")
 
@@ -391,11 +402,21 @@ class GenVanillaNN:
                 ckpt = {'epoch': epoch + 1, 'model_state_dict': self.netG.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}
                 save_path = f"{self.filename}.epoch{epoch+1}.pth"
                 torch.save(ckpt, save_path)
+                # Also save plain state_dict to the canonical filename for compatibility
+                try:
+                    torch.save(self.netG.state_dict(), self.filename)
+                except Exception:
+                    pass
                 print(f"Checkpoint saved to {save_path}")
 
         ckpt = {'epoch': n_epochs, 'model_state_dict': self.netG.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}
         save_path = f"{self.filename}.epoch{n_epochs}.pth"
         torch.save(ckpt, save_path)
+        # Also write plain state_dict for backward compatibility with older loaders
+        try:
+            torch.save(self.netG.state_dict(), self.filename)
+        except Exception:
+            pass
         print(f"Training finished. Final checkpoint saved to {save_path}")
 
     def _vgg_preprocess(self, x):
@@ -446,9 +467,9 @@ class GenVanillaNN:
 if __name__ == '__main__':
     force = False
     optSkeOrImage = 2  # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
-    n_epoch = 300
-    train = True
-    # train = False
+    n_epoch = 50
+    # train = True
+    train = False
 
     if len(sys.argv) > 1:
         filename = sys.argv[1]
