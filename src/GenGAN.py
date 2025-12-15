@@ -36,17 +36,17 @@ class Discriminator(nn.Module):
 
             # 32x32 -> 16x16
             nn.Conv2d(ngf, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
+            nn.InstanceNorm2d(ngf * 2, affine=True),
             nn.LeakyReLU(0.2, inplace=True),
 
             # 16x16 -> 8x8
             nn.Conv2d(ngf * 2, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
+            nn.InstanceNorm2d(ngf * 4, affine=True),
             nn.LeakyReLU(0.2, inplace=True),
 
             # 8x8 -> 4x4
             nn.Conv2d(ngf * 4, ngf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 8),
+            nn.InstanceNorm2d(ngf * 8, affine=True),
             nn.LeakyReLU(0.2, inplace=True),
 
             # 4x4 -> 1x1 (scalar output)
@@ -286,10 +286,10 @@ if __name__ == '__main__':
 
     targetVideoSke = VideoSkeleton(filename)
 
-    # TRAIN_MODE = True
-    TRAIN_MODE = False
+    train = True
+    # train = False
 
-    if TRAIN_MODE:
+    if train:
         gen = GenGAN(targetVideoSke, loadFromFile=True)
         gen.train(n_epochs=300)
     else:

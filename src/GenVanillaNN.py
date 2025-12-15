@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision import models
 from torch.utils.tensorboard import SummaryWriter  # Use standard SummaryWriter
 
 # Assuming VideoSkeleton, VideoReader, and Skeleton are implemented correctly
@@ -88,6 +89,7 @@ class VideoSkeletonDataset(Dataset):
         numpy_image = np.transpose(numpy_image, (1, 2, 0))
         # 3. Denormalize from [-1, 1] to [0, 1]
         denormalized_image = numpy_image * 0.5 + 0.5
+        denormalized_image = np.clip(denormalized_image, 0.0, 1.0)
         # 4. Convert RGB (normalized) to BGR (OpenCV format)
         denormalized_output_bgr = cv2.cvtColor(denormalized_image, cv2.COLOR_RGB2BGR)
         return denormalized_output_bgr
@@ -226,15 +228,16 @@ class GenNNSkeImToImage(nn.Module):
         """Creates a standard encoder block (Conv + BatchNorm + LeakyReLU)."""
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.InstanceNorm2d(out_channels, affine=True),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
     def _make_up_block(self, in_channels, out_channels, activation=nn.ReLU(True)):
         """Creates a standard decoder block (ConvT + BatchNorm + ReLU)."""
         return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.InstanceNorm2d(out_channels, affine=True),
             activation,
         )
 
@@ -280,7 +283,12 @@ class GenVanillaNN:
             self.filename = '../data/Dance/DanceGenVanillaFromSke26.pth'
         else:
             self.netG = GenNNSkeImToImage(image_size)
-            src_transform = SkeToImageTransform(image_size)
+            # ensure source transform returns a tensor with same normalization as targets
+            src_transform = transforms.Compose([
+                SkeToImageTransform(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ])
             self.filename = '../data/Dance/DanceGenVanillaFromSkeim.pth'
 
         # Target image transform
@@ -294,6 +302,18 @@ class GenVanillaNN:
 
         # Move model to device
         self.netG.to(self.device)
+
+        # optional pretrained VGG for perceptual loss
+        try:
+            vgg = models.vgg16(pretrained=True).features
+            vgg.to(self.device).eval()
+            for p in vgg.parameters():
+                p.requires_grad = False
+            self.vgg = vgg
+            print("VGG16 loaded for perceptual loss.")
+        except Exception as e:
+            self.vgg = None
+            print(f"VGG16 unavailable, perceptual loss disabled: {e}")
 
         # Dataset and DataLoader
         self.dataset = VideoSkeletonDataset(
@@ -341,11 +361,9 @@ class GenVanillaNN:
     def train(self, n_epochs=20):
         learning_rate = 0.0002
         beta1 = 0.5
-
-        optimizerG = torch.optim.Adam(self.netG.parameters(),
-                                      lr=learning_rate,
-                                      betas=(beta1, 0.999))
+        optimizer = torch.optim.Adam(self.netG.parameters(), lr=learning_rate, betas=(beta1, 0.999), weight_decay=0.0)
         criterion = nn.L1Loss()
+        lambda_perc = 0.1
 
         print(f"Starting Training for {n_epochs} epochs on {self.device}...")
         self.netG.train()
@@ -358,38 +376,62 @@ class GenVanillaNN:
                 self.netG.zero_grad()
 
                 fake_image = self.netG(ske)
-                errG = criterion(fake_image, real_image)
 
-                errG.backward()
-                optimizerG.step()
+                l1 = criterion(fake_image, real_image)
+                perc = self._perceptual_loss(real_image, fake_image) if self.vgg is not None else torch.tensor(0.0, device=self.device)
+                lossG = l1 + lambda_perc * perc
+
+                lossG.backward()
+                optimizer.step()
 
                 if i % 10 == 0:
-                    print(f'[{epoch}/{n_epochs}][{i}/{len(self.dataloader)}] Loss_G: {errG.item():.4f}')
+                    print(f'[{epoch}/{n_epochs}][{i}/{len(self.dataloader)}] L1: {l1.item():.4f} Perc: {perc.item() if isinstance(perc, torch.Tensor) else 0.0:.4f}')
 
             if (epoch + 1) % 10 == 0:
-                torch.save(self.netG.state_dict(), self.filename)
-                print(f"Model saved to {self.filename} after epoch {epoch+1}")
+                ckpt = {'epoch': epoch + 1, 'model_state_dict': self.netG.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}
+                save_path = f"{self.filename}.epoch{epoch+1}.pth"
+                torch.save(ckpt, save_path)
+                print(f"Checkpoint saved to {save_path}")
 
-        torch.save(self.netG.state_dict(), self.filename)
-        print(f"Training finished. Final model saved to {self.filename}")
+        ckpt = {'epoch': n_epochs, 'model_state_dict': self.netG.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}
+        save_path = f"{self.filename}.epoch{n_epochs}.pth"
+        torch.save(ckpt, save_path)
+        print(f"Training finished. Final checkpoint saved to {save_path}")
+
+    def _vgg_preprocess(self, x):
+        """Normalize tensor in [ -1, 1 ] to ImageNet stats for VGG."""
+        x = (x + 1.0) * 0.5
+        mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
+        return (x - mean) / std
+
+    def _perceptual_loss(self, real, fake, layers=(3, 8, 15)):
+        if self.vgg is None:
+            return torch.tensor(0.0, device=real.device)
+        xr = self._vgg_preprocess(real)
+        xf = self._vgg_preprocess(fake)
+        loss = 0.0
+        x_r = xr
+        x_f = xf
+        for i, layer in enumerate(self.vgg):
+            x_r = layer(x_r)
+            x_f = layer(x_f)
+            if i in layers:
+                loss = loss + F.mse_loss(x_r, x_f)
+        return loss
 
     def generate(self, ske):
         """Generates an image from a skeleton posture."""
         self.netG.eval()  # Set model to evaluation mode
         with torch.no_grad():
-            if isinstance(ske, Skeleton) and self.dataset.source_transform is not None:
-                # Rebuild the skeleton image exactly like in the dataset
-                # 1) Skeleton -> RGB numpy image
-                ske_img = self.dataset.source_transform.ske_to_image_transform(ske) if hasattr(self.dataset.source_transform, 'ske_to_image_transform') else self.dataset.source_transform.imsize  # placeholder
-            # Fallback: reuse dataset logic directly
+            # Use dataset preprocessing to obtain the model input (tensor)
             ske_t = self.dataset.preprocessSkeleton(ske)
+            # If preprocess returned a numpy image, convert and normalize
             if isinstance(ske_t, np.ndarray):
-                # If source_transform returned a numpy array (image), convert to tensor + normalize
                 ske_t = transforms.ToTensor()(ske_t)
-                ske_t = transforms.Normalize((0.5, 0.5, 0.5),
-                                            (0.5, 0.5, 0.5))(ske_t)
+                ske_t = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(ske_t)
 
-            # Add batch dimension
+            # Add batch dimension and send to device
             ske_t_batch = ske_t.unsqueeze(0).to(self.device)
 
             # Generate normalized image [-1, 1]
@@ -404,9 +446,9 @@ class GenVanillaNN:
 if __name__ == '__main__':
     force = False
     optSkeOrImage = 2  # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
-    n_epoch = 100
-    # train = True
-    train = False
+    n_epoch = 300
+    train = True
+    # train = False
 
     if len(sys.argv) > 1:
         filename = sys.argv[1]
