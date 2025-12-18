@@ -23,6 +23,8 @@ This README documents:
 - `data/` — example videos and saved checkpoints (check for `.pth` files in `data/Dance/`).
 - `exportedDances/` — generated result videos (examples for Nearest, GenVanilla, GenGAN outputs).
 
+**⚠️ Important:** Model weight files (`.pth` checkpoints in `data/Dance/`) are not included in this repository as they exceed 100 MB. You will need to train the models yourself using the provided training scripts or obtain them separately before running inference.
+
 ## Requirements
 - Python 3.8+ (tested with 3.8/3.9)
 - PyTorch (match your CUDA version) and torchvision
