@@ -4,7 +4,7 @@
 This repository contains code and models for a skeleton-to-image system used in a practical tutorial for deep learning and image synthesis. The pipeline extracts skeleton poses from a source video and generates images of a target person performing the same poses.
 
 This README documents:
-- how to run a demo and create a 2-minute recording of the demo;
+- 2 minutes demo video;
 - how to run inference with trained networks (Vanilla generator and GAN);
 - how to train the networks from scratch (basic commands and recommended hyperparameters);
 - a concise list of the code changes and model improvements made to improve background and texture quality.
