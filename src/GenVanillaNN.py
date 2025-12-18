@@ -467,7 +467,7 @@ class GenVanillaNN:
 if __name__ == '__main__':
     force = False
     optSkeOrImage = 2  # 1: skeleton vector (MLP), 2: skeleton image (U-Net)
-    n_epoch = 50
+    n_epoch = 200
     # train = True
     train = False
 
