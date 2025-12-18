@@ -226,10 +226,6 @@ class VideoSkeleton:
         cv2.destroyAllWindows()
 
 
-
-        
-
-
 if __name__ == '__main__':
     force = True
     #force = False

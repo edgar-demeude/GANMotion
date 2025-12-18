@@ -9,7 +9,6 @@ def display_skeletons(video_file, image_size=512, delay_ms=100):
     
     print(f"Total frames: {targetVideoSke.skeCount()}")
     print(f"Skeleton dimension: {targetVideoSke.ske[0].__array__(reduced=True).shape if targetVideoSke.skeCount() > 0 else 'N/A'}")
-    print(f"Press ESC or Q to exit, SPACE to pause, any other key to continue")
     
     paused = False
     for i in range(targetVideoSke.skeCount()):
@@ -25,7 +24,7 @@ def display_skeletons(video_file, image_size=512, delay_ms=100):
         # Convert RGB back to BGR for OpenCV display
         ske_img_bgr = cv2.cvtColor(ske_img, cv2.COLOR_RGB2BGR)
         
-        # Resize for display (optional, for better visibility on small screens)
+        # Resize for display
         display_size = (512, 512)
         ske_img_display = cv2.resize(ske_img_bgr, display_size)
         
@@ -62,6 +61,6 @@ if __name__ == '__main__':
         video_file = "../data/taichi1.mp4"
     
     image_size = 512
-    delay_ms = 100  # 100ms between frames (~10 fps)
+    delay_ms = 100  # 100ms between frames
     
     display_skeletons(video_file, image_size, delay_ms)

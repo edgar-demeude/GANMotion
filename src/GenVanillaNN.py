@@ -103,10 +103,10 @@ class SelfAttention(nn.Module):
         self.in_channels = in_channels
 
         # Reduced dimension for Q and K for efficiency (C/8)
-        self.f = nn.Conv2d(in_channels, in_channels // 8, 1)  # Query
-        self.g = nn.Conv2d(in_channels, in_channels // 8, 1)  # Key
+        self.f = nn.Conv2d(in_channels, in_channels // 8, 1) # Query
+        self.g = nn.Conv2d(in_channels, in_channels // 8, 1) # Key
         # Value (no reduction)
-        self.h = nn.Conv2d(in_channels, in_channels, 1)       # Value
+        self.h = nn.Conv2d(in_channels, in_channels, 1)  # Value
 
         # Learnable scale parameter
         self.gamma = nn.Parameter(torch.zeros(1))
@@ -193,7 +193,7 @@ class GenNNSke26ToImage(nn.Module):
 class GenNNSkeImToImage(nn.Module):
     """
     U-Net Generator for Image-to-Image translation (Skeleton Image -> Real Image)
-    with an optional Self-Attention block at the bottleneck.
+    with a Self-Attention block at the bottleneck.
     """
 
     def __init__(self, image_size, base_filters=64):
@@ -419,6 +419,7 @@ class GenVanillaNN:
             pass
         print(f"Training finished. Final checkpoint saved to {save_path}")
 
+
     def _vgg_preprocess(self, x):
         """Normalize tensor in [ -1, 1 ] to ImageNet stats for VGG."""
         x = (x + 1.0) * 0.5
@@ -440,6 +441,7 @@ class GenVanillaNN:
             if i in layers:
                 loss = loss + F.mse_loss(x_r, x_f)
         return loss
+
 
     def generate(self, ske):
         """Generates an image from a skeleton posture."""

@@ -92,7 +92,7 @@ class GenGAN:
         self.filename_D_checkpoint = '../data/Dance/DanceGenGAN_D_checkpoint.pth'
         self.start_epoch = 0
 
-        # DATASET AND DATALOADER (64x64 like in your code)
+        # DATASET AND DATALOADER
         image_size = 64
 
         src_transform = transforms.Compose([
