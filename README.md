@@ -4,12 +4,16 @@
 This repository contains code and models for a skeleton-to-image system used in a practical tutorial for deep learning and image synthesis. The pipeline extracts skeleton poses from a source video and generates images of a target person performing the same poses.
 
 This README documents:
-- 2 minutes demo video;
+- 2 minute demo video;
 - how to run inference with trained networks (Vanilla generator and GAN);
 - how to train the networks from scratch (basic commands and recommended hyperparameters);
 - a concise list of the code changes and model improvements made to improve background and texture quality.
 
 [See the course main page with the description of this tutorial/TP](http://alexandre.meyer.pages.univ-lyon1.fr/m2-apprentissage-profond-image/am/tp_dance/)
+
+## Video running the demo
+
+[![](https://markdown-videos-api.jorgenkh.no/youtube/oIhg813cOwE)](https://youtu.be/oIhg813cOwE)
 
 ## Contents
 - `src/GenVanillaNN.py` — simple regression generator (skeleton -> image) and dataset utilities.
@@ -17,8 +21,7 @@ This README documents:
 - `src/DanceDemo.py` — utility to run a demo combining source motion and generator output.
 - `src/DisplaySkeleton.py` — helper to visualize rendered skeleton inputs.
 - `data/` — example videos and saved checkpoints (check for `.pth` files in `data/Dance/`).
- - `data/` — example videos and saved checkpoints (check for `.pth` files in `data/Dance/`).
- - `exportedDances/` — generated result videos (examples for Nearest, GenVanilla, GenGAN outputs).
+- `exportedDances/` — generated result videos (examples for Nearest, GenVanilla, GenGAN outputs).
 
 ## Requirements
 - Python 3.8+ (tested with 3.8/3.9)
@@ -103,11 +106,9 @@ python DanceDemo.py
 
 Generated demo recordings and exported result videos are saved to the `exportedDances/` folder (when the demo or recording helper is used). Check that folder to compare outputs from different models (Nearest, GenVanilla, GenGAN).
 
-### Video example
-
-![videolinkytb]
-
 ## Implemented features (summary)
+
+Pipeline summary: from a source video, skeleton poses are detected and extracted frame-by-frame. These rendered skeletons are fed to a generator network (U-Net regression or a conditional GAN generator) that learns to transfer the pose onto a target person's appearance and produces synthetic images. The improvements listed below focus on background and texture quality and on training stability.
 
 To improve background and texture quality and to make training robust, the following things were implemented in the codebase:
 
