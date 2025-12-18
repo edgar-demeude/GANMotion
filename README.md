@@ -1,7 +1,7 @@
 
 # GANMotion — Motion transfer demo
 
-##### Github link: https://github.com/edgar-demeude/GANMotion?tab=readme-ov-file
+##### Github link: https://github.com/edgar-demeude/GANMotion
 
 This repository contains code and models for a skeleton-to-image system used in a practical tutorial for deep learning and image synthesis. The pipeline extracts skeleton poses from a source video and generates images of a target person performing the same poses.
 
